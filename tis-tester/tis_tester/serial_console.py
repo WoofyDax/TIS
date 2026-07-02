@@ -96,7 +96,7 @@ def restore(port: str, baud: int, reboot: bool = False) -> str:
     try:
         con.open()
         con.interrupt()
-        cmd = "cd ~/tis-tester && nix develop -c tis-test restore"
+        cmd = "cd ~/tis-tester && nix develop -c ./result/bin/tis-test restore"
         if reboot:
             cmd += " --reboot"
         out, rc = con.command(cmd, timeout=30)
