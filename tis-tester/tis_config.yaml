@@ -1,0 +1,65 @@
+# tis-tester configuration — FCS960K-N (AIC8800D80 U02)
+#
+# Copy to ~/.config/tis-tester/tis_config.yaml (immutable-root friendly)
+# or keep next to where you run `tis-test`.
+
+general:
+  # results_dir: /home/lab/tis-results     # default: ~/.local/share/tis-tester
+  poll_interval_s: 1.0
+  max_tx_duration_s: 300
+
+wifi:
+  # ioctl uses the driver's native, allow-listed wifi_test ABI and does not
+  # require a separate aic_rftest executable.
+  backend: ioctl            # ioctl | shell | mock
+  interface: wlan0
+  require_rf_mode: true
+  mode_selector: /sys/devices/platform/aic-bsp/aicbsp_info/cpmode
+  module_testmode: /sys/module/aic8800_bsp/parameters/testmode
+  packet_interval_us: 1000
+
+  # >>> ADAPT THESE TO YOUR DRIVER DROP <<<
+  # The AIC8800 RF-test entry point varies between Quectel/AICSemi releases:
+  # some ship the `aic_rftest` console tool, others expose the same verbs
+  # through debugfs (e.g. echo "tx_start ..." > /sys/kernel/debug/rwnx/rftest).
+  # Placeholders available: {iface} {freq} {channel} {band} {bw} {bw_code}
+  #                         {rate_code} {rate_name} {power}
+  commands:
+    init:
+      # - "modprobe aic8800_fdrv testmode=1"
+    deinit: []
+    tx_start:  "aic_rftest -i {iface} tx_start {freq} {bw_code} {rate_code} {power}"
+    tx_stop:   "aic_rftest -i {iface} tx_stop"
+    rx_start:  "aic_rftest -i {iface} rx_start {freq} {bw_code}"
+    rx_stop:   "aic_rftest -i {iface} rx_stop"
+    rx_result: "aic_rftest -i {iface} rx_result"
+    rx_reset:  "aic_rftest -i {iface} rx_reset"
+
+  # Regexes to scrape rx_result output (fcs_ok / fcs_err mandatory).
+  rx_result_regex:
+    fcs_ok:  '(?:fcs_ok|rx_ok|crc_ok)\s*[:=]\s*(\d+)'
+    fcs_err: '(?:fcs_err|rx_err|crc_err)\s*[:=]\s*(\d+)'
+    rssi:    'rssi\s*[:=]\s*(-?\d+)'
+
+  bw_codes: {20: 0, 40: 1}
+
+  # Override the generic rate codes if your tool uses different indices:
+  rate_code_overrides: {}
+  #   HE-MCS11: 523
+  #   11b-1M: 0
+
+bt:
+  backend: hci              # hci | mock
+  hci_dev: hci0
+  use_enhanced_test: true   # LE Rx/Tx Test v2 (PHY selectable); false = v1
+  default_payload: prbs9
+  default_payload_len: 37
+
+  # Optional vendor HCI hooks (standard HCI lacks these in DTM):
+  vendor_tx_power_cmd: ""   # e.g. "hcitool -i {dev} cmd 0x3f 0x0011 0x{power:02x}"
+  vendor_rssi_cmd: ""       # command whose output contains 'rssi: -NN'
+  vendor_rssi_regex: 'rssi\s*[:=]\s*(-?\d+)'
+
+serial:
+  port: COM5
+  baud: 1500000

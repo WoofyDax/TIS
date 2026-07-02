@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tis-tester"
+version = "1.2.0"
+description = "Automated TIS test controller for the Quectel FCS960K-N (AIC8800D80 U02) Wi-Fi/BT module"
+requires-python = ">=3.10"
+dependencies = ["PyYAML>=6.0"]
+
+[project.optional-dependencies]
+serial = ["pyserial>=3.5"]
+test = ["pytest>=8.0"]
+
+[project.scripts]
+tis-test = "tis_tester.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["tis_tester*"]
