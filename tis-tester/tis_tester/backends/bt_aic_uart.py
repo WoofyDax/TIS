@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import os
 import re
-import signal
 import subprocess
 import time
+from pathlib import Path
 
 from .base import RadioBackend, RxStats, TestParams, BackendError, run_argv, run_shell
 from .. import rates
@@ -37,17 +37,30 @@ class BtAicUartBackend(RadioBackend):
         ]))
         self.rfkill_block = b.get("rfkill_block", "bluetooth")
         self.rfkill_unblock = b.get("rfkill_unblock", "bluetooth")
+        self.service_log = Path(b.get("service_log", "/tmp/tis_bt_test_service.log"))
         self._proc: subprocess.Popen[str] | None = None
+        self._service_log_fh = None
         self._last_rx_count = 0
 
     @staticmethod
-    def _parse_test_end(out: str) -> int:
-        m = re.search(
-            r"EVENT\(\d+\)\s*:\s*((?:[0-9A-Fa-f]{2}\s+){8}[0-9A-Fa-f]{2})", out
-        )
-        if not m:
+    def _extract_event_bytes(out: str) -> list[int]:
+        candidates: list[list[int]] = []
+        for line in out.splitlines():
+            if "EVENT(" not in line:
+                continue
+            _, _, tail = line.partition(":")
+            hexes = re.findall(r"\b[0-9A-Fa-f]{2}\b", tail)
+            if hexes:
+                candidates.append([int(tok, 16) for tok in hexes])
+        if not candidates:
+            return []
+        return candidates[-1]
+
+    @classmethod
+    def _parse_test_end(cls, out: str) -> int:
+        data = cls._extract_event_bytes(out)
+        if not data:
             raise BackendError(f"Could not parse bt_test EVENT response:\n{out.strip()}")
-        data = [int(tok, 16) for tok in m.group(1).split()]
         if len(data) < 9:
             raise BackendError(f"Short bt_test EVENT response: {data}")
         status = data[6]
@@ -94,10 +107,12 @@ class BtAicUartBackend(RadioBackend):
         self._rfkill("block", self.rfkill_block)
         self._service_cmd("stop", self.service_stop)
         self._rfkill("unblock", self.rfkill_unblock)
+        self.service_log.parent.mkdir(parents=True, exist_ok=True)
+        self._service_log_fh = open(self.service_log, "a+", encoding="utf-8", errors="replace")
         self._proc = subprocess.Popen(
             [self.tool, "-s", "uart", str(self.uart_baud), self.uart_dev],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=self._service_log_fh,
+            stderr=subprocess.STDOUT,
             text=True,
             start_new_session=True,
         )
@@ -111,6 +126,9 @@ class BtAicUartBackend(RadioBackend):
         except Exception:
             pass
         self._kill_proc()
+        if self._service_log_fh is not None:
+            self._service_log_fh.close()
+            self._service_log_fh = None
         try:
             self._rfkill("block", self.rfkill_block)
         except Exception:
@@ -124,6 +142,7 @@ class BtAicUartBackend(RadioBackend):
         except Exception:
             pass
         self.mode = None
+        self.params = None
 
     def _validate(self, p: TestParams) -> None:
         if p.channel not in rates.BLE_CHANNELS:
@@ -178,8 +197,21 @@ class BtAicUartBackend(RadioBackend):
         self._last_rx_count = 0
 
     def _test_end(self) -> int:
-        out = self._run_bt_test("-c", "01", "1F", "20", "00", timeout=10.0)
-        return self._parse_test_end(out)
+        last_error: Exception | None = None
+        for _ in range(3):
+            out = self._run_bt_test("-c", "01", "1F", "20", "00", timeout=10.0)
+            try:
+                return self._parse_test_end(out)
+            except BackendError as e:
+                last_error = e
+                time.sleep(0.25)
+        if self.service_log.is_file():
+            try:
+                text = self.service_log.read_text(encoding="utf-8", errors="replace")
+                return self._parse_test_end(text)
+            except Exception as e:
+                last_error = e
+        raise BackendError(str(last_error) if last_error else "LE Test End did not return an EVENT response")
 
     def stop(self) -> RxStats | None:
         if self.mode == "tx":

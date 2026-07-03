@@ -92,6 +92,23 @@ def test_bt_aic_uart_test_end_parser():
     assert BtAicUartBackend._parse_test_end(out) == 0x1234
 
 
+def test_bt_aic_uart_test_end_parser_tolerates_noise():
+    out = "\n".join([
+        "[123.4] kernel noise",
+        "EVENT(9): 04 0E 06 05 1F 20 00 00 00",
+        "extra line",
+    ])
+    assert BtAicUartBackend._parse_test_end(out) == 0
+
+
+def test_bt_aic_uart_extracts_last_event():
+    out = "\n".join([
+        "EVENT(9): 04 0E 06 05 1F 20 00 01 00",
+        "EVENT(9): 04 0E 06 05 1F 20 00 34 12",
+    ])
+    assert BtAicUartBackend._parse_test_end(out) == 0x1234
+
+
 def test_bt_aic_uart_selected_by_default(tmp_path):
     backend = make_backend("bt", config(tmp_path))
     assert isinstance(backend, BtAicUartBackend)

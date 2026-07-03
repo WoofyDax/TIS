@@ -27,8 +27,8 @@ The script verifies SHA-256 before unpacking to `~/tis-tester`.
 cd ~/tis-tester
 nix develop
 export TERM=xterm
-tis-test rx --mock --duration 3
-tis-test interactive --mock
+./result/bin/tis-test rx --mock --duration 3
+./result/bin/tis-test interactive --mock
 pytest -q
 ```
 
@@ -52,8 +52,8 @@ and writes an HTML report path after each completed run.
 From PAMIR:
 
 ```bash
-tis-test restore
-tis-test restore --reboot   # guaranteed normal-firmware reload
+./result/bin/tis-test restore
+./result/bin/tis-test restore --reboot   # guaranteed normal-firmware reload
 ```
 
 Or, after closing PuTTY, from Windows:

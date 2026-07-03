@@ -89,6 +89,7 @@ DEFAULTS: dict = {
         ],
         "rfkill_block": "bluetooth",
         "rfkill_unblock": "bluetooth",
+        "service_log": "/tmp/tis_bt_test_service.log",
         # Optional vendor HCI command template for TX power in test mode,
         # e.g. "hcitool -i {dev} cmd 0x3f 0x0011 {power:02x}". Empty = skip.
         "vendor_tx_power_cmd": "",

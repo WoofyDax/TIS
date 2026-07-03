@@ -60,28 +60,28 @@ tis-test serial restore --port COM5 --baud 1500000 --reboot
 ```
 
 Use `laptop-tools/send-to-pamir.ps1 -Port COM5 -Baud 1500000` for the first
-offline transfer.
+offline transfer. The script unpacks the archive into `~/tis-tester`.
 
 ## Device-side commands
 
 ```bash
-tis-test diagnose
-tis-test interactive
-tis-test web --port 8080
+./result/bin/tis-test diagnose
+./result/bin/tis-test interactive
+./result/bin/tis-test web --port 8080
 
-tis-test rx --radio wifi --band 5GHz --channel 36 --bw 20 \
+./result/bin/tis-test rx --radio wifi --band 5GHz --channel 36 --bw 20 \
   --rate HE-MCS0 --duration 30 --expected 1000
 
-tis-test rx --radio bt --channel 19 --rate 1M --expected 1500
+./result/bin/tis-test rx --radio bt --channel 19 --rate 1M --expected 1500
 
-tis-test tx --radio wifi --band 2.4GHz --channel 6 --rate 11b-11M \
+./result/bin/tis-test tx --radio wifi --band 2.4GHz --channel 6 --rate 11b-11M \
   --power 17 --duration 10 --confirm-antenna
 
-tis-test sweep --radio wifi --band 2.4GHz --channels 1,6,11 \
+./result/bin/tis-test sweep --radio wifi --band 2.4GHz --channels 1,6,11 \
   --rates HE-MCS0,HT-MCS0,11b-1M --dwell 10
 
-tis-test restore
-tis-test restore --reboot
+./result/bin/tis-test restore
+./result/bin/tis-test restore --reboot
 ```
 
 Results default to `~/.local/share/tis-tester/`; configuration defaults to

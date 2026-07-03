@@ -141,7 +141,7 @@ if ($out -notmatch $sha) {
 Write-Host "Checksum verified: $sha" -ForegroundColor Green
 
 # ----------------------------------------------------------------- unpack
-SendLine 'mv /tmp/tis-tester.tar.gz ~/ && cd ~ && tar xzf tis-tester.tar.gz && echo __UNPACK_OK__'
+SendLine 'mv /tmp/tis-tester.tar.gz ~/ && mkdir -p ~/tis-tester && tar xzf ~/tis-tester.tar.gz -C ~/tis-tester && echo __UNPACK_OK__'
 $out = WaitFor "__UNPACK_OK__" 10
 $sp.Close()
 
@@ -151,8 +151,8 @@ if ($out -match "__UNPACK_OK__") {
     Write-Host "Now reopen PuTTY on $Port and continue with SERIAL_SETUP.md Part 4:"
     Write-Host "    cd ~/tis-tester"
     Write-Host "    nix develop        (or nix-shell)"
-    Write-Host "    tis-test interactive --mock"
+    Write-Host "    ./result/bin/tis-test interactive --mock"
 } else {
     Write-Host "Transfer verified but unpack didn't confirm - reopen PuTTY and run:" -ForegroundColor Yellow
-    Write-Host '    mv /tmp/tis-tester.tar.gz ~/ ; cd ~ ; tar xzf tis-tester.tar.gz'
+    Write-Host '    mv /tmp/tis-tester.tar.gz ~/ ; mkdir -p ~/tis-tester ; tar xzf ~/tis-tester.tar.gz -C ~/tis-tester'
 }

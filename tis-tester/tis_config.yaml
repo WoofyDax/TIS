@@ -66,6 +66,7 @@ bt:
     - bluetooth.service
   rfkill_block: bluetooth
   rfkill_unblock: bluetooth
+  service_log: /tmp/tis_bt_test_service.log
 
   # Optional vendor HCI hooks (standard HCI lacks these in DTM):
   vendor_tx_power_cmd: ""   # e.g. "hcitool -i {dev} cmd 0x3f 0x0011 0x{power:02x}"

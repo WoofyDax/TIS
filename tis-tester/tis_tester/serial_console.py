@@ -117,7 +117,7 @@ def launch(port: str, baud: int, mock: bool = False,
         # Do not use exec: returning from the TUI must return to a usable shell.
         con.serial.write(
             ("\x15cd ~/tis-tester && export TERM=xterm && "
-             f"nix develop -c tis-test interactive{suffix}\r\n").encode()
+             f"nix develop -c ./result/bin/tis-test interactive{suffix}\r\n").encode()
         )
         con.serial.flush()
         time.sleep(1)
