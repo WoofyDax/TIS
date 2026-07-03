@@ -49,11 +49,23 @@ wifi:
   #   11b-1M: 0
 
 bt:
-  backend: hci              # hci | mock
+  backend: aic_uart         # aic_uart | hci | mock
   hci_dev: hci0
   use_enhanced_test: true   # LE Rx/Tx Test v2 (PHY selectable); false = v1
   default_payload: prbs9
   default_payload_len: 37
+  tool_path: /root/aicrf-test-extract/usr/bin/bt_test
+  uart_dev: /dev/ttyS4
+  uart_baud: 1500000
+  startup_delay_s: 0.5
+  service_stop:
+    - aic8800-bt.service
+    - bluetooth.service
+  service_start:
+    - aic8800-bt.service
+    - bluetooth.service
+  rfkill_block: bluetooth
+  rfkill_unblock: bluetooth
 
   # Optional vendor HCI hooks (standard HCI lacks these in DTM):
   vendor_tx_power_cmd: ""   # e.g. "hcitool -i {dev} cmd 0x3f 0x0011 0x{power:02x}"

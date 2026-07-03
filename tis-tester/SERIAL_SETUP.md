@@ -69,7 +69,8 @@ kernel; the built-in driver can block in that path.
 
 ## 6. Hardware support on this image
 
-- BLE Direct Test Mode works through standard HCI on `hci0`.
+- BLE RX packet counting on this image uses AIC's raw UART `bt_test` path on
+  `/dev/ttyS4`, not the BlueZ `hci0` DTM path.
 - The native AIC Wi‑Fi RF-test ioctl is implemented in the application.
 - Wi‑Fi RF-test firmware must already be active. This image's AIC drivers are
   built in and cannot safely switch firmware at runtime. Obtain a vendor

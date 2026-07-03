@@ -54,7 +54,17 @@ def restore_normal(cfg: dict, reboot: bool = False) -> dict:
         report["actions"].append(f"Wi-Fi stop unavailable: {e}")
 
     try:
-        _run("hcitool -i hci0 cmd 0x08 0x001f", report)
+        b = cfg.get("bt", {})
+        if b.get("backend") == "aic_uart":
+            tool = b.get("tool_path", "/root/aicrf-test-extract/usr/bin/bt_test")
+            _run(f"{tool} -c 01 1F 20 00", report)
+            _run(f"pkill -f '{tool}'", report)
+            if b.get("rfkill_block"):
+                _run(f"rfkill block {b['rfkill_block']}", report)
+            if b.get("rfkill_unblock"):
+                _run(f"rfkill unblock {b['rfkill_unblock']}", report)
+        else:
+            _run("hcitool -i hci0 cmd 0x08 0x001f", report)
     except Exception as e:
         report["actions"].append(f"BT test-end unavailable: {e}")
 

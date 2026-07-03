@@ -8,7 +8,9 @@ import pytest
 
 from tis_tester import rates
 from tis_tester.aic_ioctl import AicPrivateIoctl
+from tis_tester.backends import make_backend
 from tis_tester.backends.base import BackendError, RxStats, TestParams as Params
+from tis_tester.backends.bt_aic_uart import BtAicUartBackend
 from tis_tester.backends.bt_hci import BtHciBackend
 from tis_tester.backends.wifi_aic import WifiAicBackend
 from tis_tester.config import DEFAULTS
@@ -83,6 +85,22 @@ def test_wifi_rx_reports_crc_errors_from_total(tmp_path):
 def test_bt_hci_command_complete_parser():
     out = "> HCI Event: 0x0e plen 6\n 01 1f 20 00 34 12"
     assert BtHciBackend._parse_event(out) == bytes.fromhex("01 1f 20 00 34 12")
+
+
+def test_bt_aic_uart_test_end_parser():
+    out = "EVENT(9): 04 0E 06 05 1F 20 00 34 12"
+    assert BtAicUartBackend._parse_test_end(out) == 0x1234
+
+
+def test_bt_aic_uart_selected_by_default(tmp_path):
+    backend = make_backend("bt", config(tmp_path))
+    assert isinstance(backend, BtAicUartBackend)
+
+
+def test_bt_aic_uart_requires_1m_phy(tmp_path):
+    backend = BtAicUartBackend(config(tmp_path))
+    with pytest.raises(BackendError, match="validated for BLE 1M PHY"):
+        backend._validate(Params(radio="bt", channel=19, rate="2M"))
 
 
 def test_web_tx_requires_arm_and_auto_expires(tmp_path):

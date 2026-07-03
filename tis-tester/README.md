@@ -93,6 +93,7 @@ The live board identifies as AIC8800D80 U02 and exposes:
 
 - Wi‑Fi: `wlan0`, built-in `aic8800_fdrv`, SDIO function on `mmc2`
 - Bluetooth: `hci0`, UART attached at 1,500,000 baud
+- Bluetooth DTM vendor tool: `/root/aicrf-test-extract/usr/bin/bt_test`
 - Normal firmware: `fmacfw_8800d80_u02.bin`
 - RF-test firmware: `lmacfw_rf_8800d80_u02.bin`
 - Mode selector: `/sys/devices/platform/aic-bsp/aicbsp_info/cpmode`
@@ -114,7 +115,8 @@ sequence to the config.
 
 For production Wi‑Fi TIS, use a Quectel/AICSemi RF-test-enabled PAMIR image
 or a kernel where the vendor driver is loadable with test mode enabled. BLE
-DTM works through standard HCI on the current image.
+DTM RX packet counting on this image must bypass BlueZ and use AIC's raw UART
+`bt_test` path on `/dev/ttyS4`.
 
 `tis-test restore` always attempts test-end/stop, selects mode 0, unblocks
 rfkill, restarts NetworkManager/wpa_supplicant/Bluetooth, and verifies the

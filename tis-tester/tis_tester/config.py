@@ -70,11 +70,25 @@ DEFAULTS: dict = {
         ],
     },
     "bt": {
-        "backend": "hci",             # "hci" or "mock"
+        "backend": "aic_uart",        # "aic_uart", "hci", or "mock"
         "hci_dev": "hci0",
         "use_enhanced_test": True,    # HCI LE Rx/Tx Test v2 (PHY selectable)
         "default_payload": "prbs9",
         "default_payload_len": 37,
+        "tool_path": "/root/aicrf-test-extract/usr/bin/bt_test",
+        "uart_dev": "/dev/ttyS4",
+        "uart_baud": 1500000,
+        "startup_delay_s": 0.5,
+        "service_stop": [
+            "aic8800-bt.service",
+            "bluetooth.service",
+        ],
+        "service_start": [
+            "aic8800-bt.service",
+            "bluetooth.service",
+        ],
+        "rfkill_block": "bluetooth",
+        "rfkill_unblock": "bluetooth",
         # Optional vendor HCI command template for TX power in test mode,
         # e.g. "hcitool -i {dev} cmd 0x3f 0x0011 {power:02x}". Empty = skip.
         "vendor_tx_power_cmd": "",
