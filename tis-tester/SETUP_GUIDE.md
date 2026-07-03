@@ -8,8 +8,8 @@ See [README.md](README.md) for the verified hardware limitations and
 ```bash
 cd ~/tis-tester
 nix develop
-tis-test diagnose
-tis-test rx --mock --duration 3
+./result/bin/tis-test diagnose
+./result/bin/tis-test rx --mock --duration 3
 ```
 
 Plain Debian fallback:
@@ -26,7 +26,7 @@ immutable root is not modified.
 ## Browser dashboard
 
 ```bash
-sudo -E env PATH="$PATH" tis-test web --host 0.0.0.0 --port 8080
+sudo -E env PATH="$PATH" ./result/bin/tis-test web --host 0.0.0.0 --port 8080
 ```
 
 Open `http://<PAMIR-IP>:8080` on the laptop. The page is self-contained and
@@ -36,20 +36,21 @@ and auto-stops at the configured safety limit.
 ## Hardware preflight
 
 ```bash
-tis-test diagnose
+./result/bin/tis-test diagnose
 hciconfig hci0
 cat /sys/devices/platform/aic-bsp/aicbsp_info/cpmode
 ```
 
-BLE DTM can run on the current image. Wi‑Fi testing fails closed unless the
-AIC RF-test firmware is already active. Do not use runtime SDIO unbind/bind
-on this kernel.
+BLE RX packet counting on the current image uses AIC's raw UART `bt_test`
+path on `/dev/ttyS4`, not the BlueZ `hci0` DTM path. Wi‑Fi testing fails
+closed unless the AIC RF-test firmware is already active. Do not use runtime
+SDIO unbind/bind on this kernel.
 
 ## Restore normal operation
 
 ```bash
-sudo -E env PATH="$PATH" tis-test restore
-sudo -E env PATH="$PATH" tis-test restore --reboot
+sudo -E env PATH="$PATH" ./result/bin/tis-test restore
+sudo -E env PATH="$PATH" ./result/bin/tis-test restore --reboot
 ```
 
 Use `--reboot` after an RF-firmware session to guarantee the normal firmware
