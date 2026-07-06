@@ -124,6 +124,13 @@ def _live_screen(
             active_logger = None
         run = None
 
+    def _abort_run() -> None:
+        nonlocal run, active_logger
+        if active_logger is not None:
+            active_logger.close()
+            active_logger = None
+        run = None
+
     stdscr.nodelay(True)
     try:
         while True:
@@ -179,7 +186,8 @@ def _live_screen(
                         f"{last.rssi_dbm:.1f} dBm" if last.rssi_dbm is not None else "n/a",
                     ),
                     ("PER", f"{per * 100:.2f} %" if per is not None else "n/a"),
-                    ("CRC statistic", f"ok {last.packets_ok}   err {last.packets_err}"),
+                    ("CRC statistic", f"ok {last.packets_ok}   err "
+                     f"{last.packets_err if last.packets_err is not None else 'n/a'}"),
                     ("Packet count", f"{last.packets_total}"),
                 ]
             else:
@@ -228,7 +236,11 @@ def _live_screen(
                         msg = "TX interlock: return to setup and confirm RF load"
                     else:
                         _open_run("tx")
-                        backend.start_tx(p)
+                        try:
+                            backend.start_tx(p)
+                        except Exception:
+                            _abort_run()
+                            raise
                         tx_started_at = time.time()
                         msg = "TX continuous started"
                         last = None
@@ -243,7 +255,11 @@ def _live_screen(
                         _close_run(msg, final)
                     else:
                         _open_run("rx")
-                        backend.start_rx(p)
+                        try:
+                            backend.start_rx(p)
+                        except Exception:
+                            _abort_run()
+                            raise
                         msg = "RX continuous started"
                         last = None
                 elif k in (ord("z"), ord("Z")) and backend.mode == "rx":
@@ -316,13 +332,17 @@ def _setup_flow(stdscr, cfg, force_mock: bool) -> None:
             p.rate = pool[j].name
         else:
             p.band = "2.4GHz"
+            p.bandwidth_mhz = 1
             ch = _prompt_int(
                 stdscr, "BLE RF channel (freq = 2402 + 2*ch MHz)", 0, 39, 19
             )
             if ch is None:
                 continue
             p.channel = ch
+            kind = cfg["bt"].get("backend", "aic_uart")
             keys = list(rates.BT_PHYS)
+            if kind == "aic_uart" and not force_mock:
+                keys = list(cfg["bt"].get("validated_phys", ["1M"]))
             i = _menu(stdscr, "Select PHY / data rate", [rates.BT_PHYS[k].name for k in keys])
             if i is None:
                 continue

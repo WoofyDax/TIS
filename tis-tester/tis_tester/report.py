@@ -145,7 +145,7 @@ def render_report(run: dict) -> str:
             f"<td>{html.escape(_fmt_num(sample.get('rssi_dbm')))}</td>"
             f"<td>{html.escape(_fmt_num(None if sample.get('per') is None else sample['per'] * 100.0, 2))}</td>"
             f"<td>{html.escape(str(sample.get('packets_ok', 'n/a')))}</td>"
-            f"<td>{html.escape(str(sample.get('packets_err', 'n/a')))}</td>"
+            f"<td>{html.escape(_fmt_num(sample.get('packets_err'), 0))}</td>"
             f"<td>{html.escape(str(sample.get('packets_total', 'n/a')))}</td>"
             f"<td>{html.escape(str(sample.get('event', 'sample')))}</td>"
             "</tr>"
@@ -317,7 +317,13 @@ def write_sweep_report(results_dir: str | Path, source: str, title: str,
     root.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     path = root / f"{_slug(title)}_{stamp}.html"
-    ordered = sorted(rows, key=lambda r: (r.get("packets_total", 0), -(r.get("per_pct") or 9999)), reverse=True)
+    def rank(row: dict) -> tuple[int, float]:
+        per = row.get("per_pct")
+        # More packets is better; for equal packet counts, lower PER is
+        # better.  Treat 0.0 as a real (best) value rather than as missing.
+        return int(row.get("packets_total", 0)), -(float(per) if per is not None else float("inf"))
+
+    ordered = sorted(rows, key=rank, reverse=True)
     best = ordered[:10]
     body_rows = []
     for row in ordered:
@@ -329,7 +335,7 @@ def write_sweep_report(results_dir: str | Path, source: str, title: str,
             f"<td>{html.escape(_fmt_num(row.get('rssi_dbm')))}</td>"
             f"<td>{html.escape(_fmt_num(row.get('per_pct'), 2))}</td>"
             f"<td>{html.escape(str(row.get('packets_ok', 0)))}</td>"
-            f"<td>{html.escape(str(row.get('packets_err', 0)))}</td>"
+            f"<td>{html.escape(_fmt_num(row.get('packets_err'), 0))}</td>"
             f"<td>{html.escape(str(row.get('packets_total', 0)))}</td>"
             "</tr>"
         )

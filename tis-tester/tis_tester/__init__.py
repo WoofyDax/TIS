@@ -5,4 +5,4 @@ Designed for Debian/NixOS hosts with an immutable root: all state, logs,
 and configuration live in user-writable locations.
 """
 
-__version__ = "1.2.0"
+__version__ = "1.2.1"

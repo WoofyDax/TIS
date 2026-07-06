@@ -150,8 +150,8 @@ if ($out -match "__UNPACK_OK__") {
     Write-Host "SUCCESS - tis-tester is unpacked in ~/tis-tester on PAMIR." -ForegroundColor Green
     Write-Host "Now reopen PuTTY on $Port and continue with SERIAL_SETUP.md Part 4:"
     Write-Host "    cd ~/tis-tester"
-    Write-Host "    nix develop        (or nix-shell)"
-    Write-Host "    ./result/bin/tis-test interactive --mock"
+    Write-Host "    nix develop"
+    Write-Host "    tis-test interactive --mock"
 } else {
     Write-Host "Transfer verified but unpack didn't confirm - reopen PuTTY and run:" -ForegroundColor Yellow
     Write-Host '    mv /tmp/tis-tester.tar.gz ~/ ; mkdir -p ~/tis-tester ; tar xzf ~/tis-tester.tar.gz -C ~/tis-tester'

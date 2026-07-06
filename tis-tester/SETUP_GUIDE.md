@@ -8,8 +8,8 @@ See [README.md](README.md) for the verified hardware limitations and
 ```bash
 cd ~/tis-tester
 nix develop
-./result/bin/tis-test diagnose
-./result/bin/tis-test rx --mock --duration 3
+tis-test diagnose
+tis-test rx --mock --duration 3
 ```
 
 Plain Debian fallback:
@@ -26,7 +26,7 @@ immutable root is not modified.
 ## Browser dashboard
 
 ```bash
-sudo -E env PATH="$PATH" ./result/bin/tis-test web --host 0.0.0.0 --port 8080
+tis-test web --host 0.0.0.0 --port 8080
 ```
 
 Open `http://<PAMIR-IP>:8080` on the laptop. The page is self-contained and
@@ -36,7 +36,7 @@ and auto-stops at the configured safety limit.
 ## Hardware preflight
 
 ```bash
-./result/bin/tis-test diagnose
+tis-test diagnose
 hciconfig hci0
 cat /sys/devices/platform/aic-bsp/aicbsp_info/cpmode
 ```
@@ -49,8 +49,8 @@ SDIO unbind/bind on this kernel.
 ## Restore normal operation
 
 ```bash
-sudo -E env PATH="$PATH" ./result/bin/tis-test restore
-sudo -E env PATH="$PATH" ./result/bin/tis-test restore --reboot
+tis-test restore
+tis-test restore --reboot
 ```
 
 Use `--reboot` after an RF-firmware session to guarantee the normal firmware

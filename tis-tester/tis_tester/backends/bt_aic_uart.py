@@ -13,7 +13,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from .base import RadioBackend, RxStats, TestParams, BackendError, run_argv, run_shell
+from .base import RadioBackend, RxStats, TestParams, BackendError, run_argv
 from .. import rates
 
 
@@ -38,9 +38,10 @@ class BtAicUartBackend(RadioBackend):
         self.rfkill_block = b.get("rfkill_block", "bluetooth")
         self.rfkill_unblock = b.get("rfkill_unblock", "bluetooth")
         self.service_log = Path(b.get("service_log", "/tmp/tis_bt_test_service.log"))
+        self.validated_phys = tuple(b.get("validated_phys", ["1M"]))
         self._proc: subprocess.Popen[str] | None = None
         self._service_log_fh = None
-        self._last_rx_count = 0
+        self._accum_ok = 0
 
     @staticmethod
     def _extract_event_bytes(out: str) -> list[int]:
@@ -94,37 +95,12 @@ class BtAicUartBackend(RadioBackend):
 
     def _stop_existing_tool(self) -> None:
         try:
-            run_shell(f"pkill -f '{self.tool}'", timeout=5.0)
+            run_argv(["pkill", "-f", self.tool], timeout=5.0)
         except BackendError:
             pass
 
-    def open(self) -> None:
-        if not os.path.exists(self.tool):
-            raise BackendError(f"bt_test tool not found: {self.tool}")
-        if not os.path.exists(self.uart_dev):
-            raise BackendError(f"UART device not found: {self.uart_dev}")
-        self._stop_existing_tool()
-        self._rfkill("block", self.rfkill_block)
-        self._service_cmd("stop", self.service_stop)
-        self._rfkill("unblock", self.rfkill_unblock)
-        self.service_log.parent.mkdir(parents=True, exist_ok=True)
-        self._service_log_fh = open(self.service_log, "a+", encoding="utf-8", errors="replace")
-        self._proc = subprocess.Popen(
-            [self.tool, "-s", "uart", str(self.uart_baud), self.uart_dev],
-            stdout=self._service_log_fh,
-            stderr=subprocess.STDOUT,
-            text=True,
-            start_new_session=True,
-        )
-        time.sleep(self.startup_delay_s)
-        if self._proc.poll() is not None:
-            raise BackendError("bt_test service exited immediately")
-
-    def close(self) -> None:
-        try:
-            self.stop()
-        except Exception:
-            pass
+    def _restore_host_stack(self) -> None:
+        """Best-effort rollback used by both close() and failed open()."""
         self._kill_proc()
         if self._service_log_fh is not None:
             self._service_log_fh.close()
@@ -141,6 +117,43 @@ class BtAicUartBackend(RadioBackend):
             self._service_cmd("start", self.service_start)
         except Exception:
             pass
+
+    def open(self) -> None:
+        if not os.path.exists(self.tool):
+            raise BackendError(f"bt_test tool not found: {self.tool}")
+        if not os.path.exists(self.uart_dev):
+            raise BackendError(f"UART device not found: {self.uart_dev}")
+        try:
+            self._stop_existing_tool()
+            self._rfkill("block", self.rfkill_block)
+            self._service_cmd("stop", self.service_stop)
+            self._rfkill("unblock", self.rfkill_unblock)
+            self.service_log.parent.mkdir(parents=True, exist_ok=True)
+            # Truncate the file so an old EVENT can never be mistaken for the
+            # response to a command in this session.
+            self._service_log_fh = open(
+                self.service_log, "w+", encoding="utf-8", errors="replace"
+            )
+            self._proc = subprocess.Popen(
+                [self.tool, "-s", "uart", str(self.uart_baud), self.uart_dev],
+                stdout=self._service_log_fh,
+                stderr=subprocess.STDOUT,
+                text=True,
+                start_new_session=True,
+            )
+            time.sleep(self.startup_delay_s)
+            if self._proc.poll() is not None:
+                raise BackendError("bt_test service exited immediately")
+        except Exception:
+            self._restore_host_stack()
+            raise
+
+    def close(self) -> None:
+        try:
+            self.stop()
+        except Exception:
+            pass
+        self._restore_host_stack()
         self.mode = None
         self.params = None
 
@@ -149,9 +162,10 @@ class BtAicUartBackend(RadioBackend):
             raise BackendError("BLE RF channel must be 0-39")
         if p.rate not in rates.BT_PHYS:
             raise BackendError(f"BT PHY must be one of {list(rates.BT_PHYS)}")
-        if p.rate != "1M":
+        if p.rate not in self.validated_phys:
             raise BackendError(
-                "The current AIC bt_test DTM path has only been validated for BLE 1M PHY."
+                "The AIC bt_test DTM path is validated for: "
+                + ", ".join(self.validated_phys)
             )
         if p.payload not in rates.BT_PAYLOADS:
             raise BackendError(f"payload must be one of {list(rates.BT_PAYLOADS)}")
@@ -171,7 +185,7 @@ class BtAicUartBackend(RadioBackend):
             "-H", "le_tx",
             "chnl", str(p.channel),
             "len", str(p.payload_len),
-            "le_phy", "1",
+            "le_phy", str(rates.BT_PHYS[p.rate].hci_phy),
             "mod_idx", "0",
             timeout=10.0,
         )
@@ -185,32 +199,44 @@ class BtAicUartBackend(RadioBackend):
         if self.mode:
             self.stop()
         self._ensure_open()
+        self._restart_rx(p)
+        self.mode, self.params = "rx", p
+        self._accum_ok = 0
+
+    def _restart_rx(self, p: TestParams) -> None:
         self._run_bt_test(
             "-H", "le_rx",
             "chnl", str(p.channel),
             "len", str(p.payload_len),
-            "le_phy", "1",
+            "le_phy", str(rates.BT_PHYS[p.rate].hci_phy),
             "mod_idx", "0",
             timeout=10.0,
         )
-        self.mode, self.params = "rx", p
-        self._last_rx_count = 0
 
     def _test_end(self) -> int:
+        # LE Test End changes controller state.  Send it exactly once: retrying
+        # the command after a parse miss can turn a successful first response
+        # into Command Disallowed and lose the real count.
+        offset = self.service_log.stat().st_size if self.service_log.is_file() else 0
+        out = self._run_bt_test("-c", "01", "1F", "20", "00", timeout=10.0)
         last_error: Exception | None = None
-        for _ in range(3):
-            out = self._run_bt_test("-c", "01", "1F", "20", "00", timeout=10.0)
+        deadline = time.monotonic() + 1.0
+        while True:
+            combined = out
+            if self.service_log.is_file():
+                try:
+                    with open(self.service_log, encoding="utf-8", errors="replace") as fh:
+                        fh.seek(offset)
+                        combined += "\n" + fh.read()
+                except OSError:
+                    pass
             try:
-                return self._parse_test_end(out)
+                return self._parse_test_end(combined)
             except BackendError as e:
                 last_error = e
-                time.sleep(0.25)
-        if self.service_log.is_file():
-            try:
-                text = self.service_log.read_text(encoding="utf-8", errors="replace")
-                return self._parse_test_end(text)
-            except Exception as e:
-                last_error = e
+            if time.monotonic() >= deadline:
+                break
+            time.sleep(0.1)
         raise BackendError(str(last_error) if last_error else "LE Test End did not return an EVENT response")
 
     def stop(self) -> RxStats | None:
@@ -221,9 +247,10 @@ class BtAicUartBackend(RadioBackend):
             return None
         if self.mode == "rx":
             count = self._test_end()
-            self._last_rx_count = count
+            total = self._accum_ok + count
             st = RxStats(
-                packets_ok=count,
+                packets_ok=total,
+                packets_err=None,
                 expected_packets=self.params.expected_packets if self.params else None,
             )
             self.mode = None
@@ -235,20 +262,23 @@ class BtAicUartBackend(RadioBackend):
         if self.mode == "rx" and self.params:
             self._test_end()
             params = self.params
-            self.mode = None
-            self.params = None
-            self.start_rx(params)
+            self._restart_rx(params)
+            self._accum_ok = 0
 
     def poll_rx(self) -> RxStats:
         if self.mode != "rx":
             raise BackendError("Receiver is not running")
         count = self._test_end()
         params = self.params
-        self.mode = None
-        self.params = None
-        self.start_rx(params)
-        self._last_rx_count = count
+        self._accum_ok += count
+        try:
+            self._restart_rx(params)
+        except Exception:
+            self.mode = None
+            self.params = None
+            raise
         return RxStats(
-            packets_ok=count,
+            packets_ok=self._accum_ok,
+            packets_err=None,
             expected_packets=params.expected_packets if params else None,
         )

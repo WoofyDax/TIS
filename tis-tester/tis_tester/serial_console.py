@@ -96,7 +96,7 @@ def restore(port: str, baud: int, reboot: bool = False) -> str:
     try:
         con.open()
         con.interrupt()
-        cmd = "cd ~/tis-tester && nix develop -c ./result/bin/tis-test restore"
+        cmd = "cd ~/tis-tester && nix develop -c python -m tis_tester.cli restore"
         if reboot:
             cmd += " --reboot"
         out, rc = con.command(cmd, timeout=30)
@@ -117,7 +117,7 @@ def launch(port: str, baud: int, mock: bool = False,
         # Do not use exec: returning from the TUI must return to a usable shell.
         con.serial.write(
             ("\x15cd ~/tis-tester && export TERM=xterm && "
-             f"nix develop -c ./result/bin/tis-test interactive{suffix}\r\n").encode()
+             f"nix develop -c python -m tis_tester.cli interactive{suffix}\r\n").encode()
         )
         con.serial.flush()
         time.sleep(1)

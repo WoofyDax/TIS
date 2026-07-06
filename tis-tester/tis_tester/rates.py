@@ -30,7 +30,11 @@ CHANNELS_5 = {ch: 5000 + 5 * ch for ch in _5G_CH}
 
 
 def channels_for_band(band: str) -> dict[int, int]:
-    return CHANNELS_24 if band.startswith("2.4") else CHANNELS_5
+    if band == "2.4GHz":
+        return CHANNELS_24
+    if band == "5GHz":
+        return CHANNELS_5
+    raise ValueError(f"Unknown band {band!r}; expected one of {BANDS}")
 
 
 def channel_to_freq(band: str, channel: int) -> int:

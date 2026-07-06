@@ -82,6 +82,7 @@ class Controller:
                 p.radio = str(d["radio"])
                 if p.radio == "bt":
                     p.band = "2.4GHz"
+                    p.bandwidth_mhz = 1
                     if p.rate not in rates.BT_PHYS:
                         p.rate = "1M"
                     if p.channel not in rates.BLE_CHANNELS:
@@ -107,18 +108,32 @@ class Controller:
                 p.expected_packets = v or None
 
     def _validate(self, p: TestParams) -> None:
+        if p.radio not in ("wifi", "bt"):
+            raise BackendError("Radio must be 'wifi' or 'bt'")
         if p.radio == "wifi":
             rates.channel_to_freq(p.band, p.channel)
+            if p.bandwidth_mhz not in rates.BANDWIDTHS_MHZ:
+                raise BackendError(
+                    f"Wi-Fi bandwidth must be one of {rates.BANDWIDTHS_MHZ} MHz"
+                )
             r = rates.lookup_wifi_rate(p.rate)
             if p.band not in r.bands:
                 raise BackendError(f"{r.name} is not valid on {p.band}")
             if r.family == "legacy-b" and p.bandwidth_mhz != 20:
                 raise BackendError("802.11b rates are 20 MHz only")
         else:
+            if p.bandwidth_mhz != 1:
+                raise BackendError("BLE DTM bandwidth is fixed by the selected PHY")
             if p.channel not in rates.BLE_CHANNELS:
                 raise BackendError("BLE RF channel must be 0-39")
             if p.rate not in rates.BT_PHYS:
                 raise BackendError(f"BT PHY must be one of {list(rates.BT_PHYS)}")
+            if p.payload not in rates.BT_PAYLOADS:
+                raise BackendError(f"BT payload must be one of {list(rates.BT_PAYLOADS)}")
+            if not (0 <= p.payload_len <= 255):
+                raise BackendError("BLE payload length must be 0-255")
+        if p.expected_packets is not None and p.expected_packets <= 0:
+            raise BackendError("Expected packets must be positive or left blank")
         if not (rates.TX_POWER_MIN_DBM <= p.tx_power_dbm <= rates.TX_POWER_MAX_DBM):
             raise BackendError(f"TX power must be {rates.TX_POWER_MIN_DBM}"
                                f"-{rates.TX_POWER_MAX_DBM} dBm")
@@ -126,11 +141,21 @@ class Controller:
     # ------------------------------------------------------------- control
     def start_rx(self) -> None:
         with self.lock:
+            if self.mode:
+                raise BackendError("Stop the running test before starting RX")
             self._validate(self.params)
             self._ensure_backend()
             self._stop_poll()
-            self.backend.start_rx(self.params)
             self._begin_run("rx")
+            try:
+                self.backend.start_rx(self.params)
+            except Exception:
+                self._discard_run()
+                try:
+                    self.backend.stop()
+                except Exception:
+                    pass
+                raise
             self.mode = "rx"
             self.last = None
             self.history.clear()
@@ -141,6 +166,8 @@ class Controller:
 
     def start_tx(self) -> None:
         with self.lock:
+            if self.mode:
+                raise BackendError("Stop the running test before starting TX")
             if time.time() > self.tx_armed_until:
                 raise BackendError(
                     "TX interlock is not armed. Confirm the antenna/chamber RF cable first."
@@ -150,8 +177,16 @@ class Controller:
             self._stop_poll()
             if self.mode:
                 self.backend.stop()
-            self.backend.start_tx(self.params)
             self._begin_run("tx")
+            try:
+                self.backend.start_tx(self.params)
+            except Exception:
+                self._discard_run()
+                try:
+                    self.backend.stop()
+                except Exception:
+                    pass
+                raise
             self.mode = "tx"
             self.message = "TX continuous running"
             self.tx_armed_until = 0.0
@@ -168,7 +203,10 @@ class Controller:
             self.message = "TX armed for 60 seconds — RF load confirmed"
 
     def _tx_timeout(self) -> None:
-        self.stop()
+        try:
+            self.stop()
+        except BackendError:
+            return
         with self.lock:
             self.message = "TX auto-stopped at the safety time limit"
 
@@ -180,7 +218,15 @@ class Controller:
             timer.cancel()
         with self.lock:
             if self.backend and self.mode:
-                final = self.backend.stop()
+                try:
+                    final = self.backend.stop()
+                except BackendError as e:
+                    self.message = f"ERROR: stop failed; host stack restored: {e}"
+                    self.mode = None
+                    self.backend.close()
+                    self.backend = None
+                    self._finish_run(self.message, None)
+                    raise
                 if final is not None:
                     self.last = final
                     self._record(final, event="final")
@@ -191,7 +237,12 @@ class Controller:
             self.mode = None
 
     def restore(self) -> None:
-        self.stop()
+        try:
+            self.stop()
+        except BackendError:
+            # stop() already closed the failed backend and restored its host
+            # stack; continue with the explicit normal-mode recovery.
+            pass
         with self.lock:
             if self.backend:
                 self.backend.close()
@@ -214,7 +265,10 @@ class Controller:
                 self.message = "Counters zeroed"
 
     def close(self) -> None:
-        self.stop()
+        try:
+            self.stop()
+        except BackendError:
+            pass
         with self.lock:
             self._close_logger()
             if self.backend:
@@ -239,7 +293,17 @@ class Controller:
                     self.last = st
                     self._record(st)
                 except BackendError as e:
-                    self.message = f"Poll error: {e}"
+                    self.message = f"ERROR: RX poll failed; test stopped: {e}"
+                    failed_backend = self.backend
+                    self.mode = None
+                    self.backend = None
+                    failed_backend.close()
+                    try:
+                        self._finish_run(self.message, None)
+                    except OSError as report_error:
+                        self.message += f"; report failed: {report_error}"
+                    self._poll_stop.set()
+                    return
 
     def _begin_run(self, mode: str) -> None:
         self._close_logger()
@@ -275,6 +339,12 @@ class Controller:
         if self.logger is not None:
             self.logger.close()
             self.logger = None
+
+    def _discard_run(self) -> None:
+        """Drop a prepared run when the radio failed to start."""
+        self._close_logger()
+        self._active_run = None
+        self._run_samples = []
 
     def _record(self, st: RxStats, event: str = "sample") -> None:
         if self.logger is not None:
@@ -338,11 +408,15 @@ class Controller:
                     "channel_freqs": {c: rates.channel_to_freq(p.band, c) for c in chans},
                     "bandwidths": list(rates.BANDWIDTHS_MHZ),
                     "rate_groups": groups}
+        kind = self.cfg["bt"].get("backend", "aic_uart")
+        phys = list(rates.BT_PHYS)
+        if kind == "aic_uart" and not self.force_mock:
+            phys = list(self.cfg["bt"].get("validated_phys", ["1M"]))
         return {"bands": ["2.4GHz"],
                 "channels": list(range(40)),
                 "channel_freqs": {c: 2402 + 2 * c for c in range(40)},
                 "bandwidths": [1],
-                "rate_groups": {"PHY": list(rates.BT_PHYS)},
+                "rate_groups": {"PHY": phys},
                 "payloads": list(rates.BT_PAYLOADS)}
 
 
@@ -377,8 +451,12 @@ class Handler(BaseHTTPRequestHandler):
             if not path:
                 self._send(404, b"no report available", "text/plain")
                 return
-            with open(path, "rb") as fh:
-                body = fh.read()
+            try:
+                with open(path, "rb") as fh:
+                    body = fh.read()
+            except OSError:
+                self._send(404, b"report file is unavailable", "text/plain")
+                return
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
@@ -394,10 +472,14 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         n = int(self.headers.get("Content-Length") or 0)
+        if n < 0 or n > 65536:
+            return self._json({"ok": False, "error": "request body too large"}, 413)
         try:
             body = json.loads(self.rfile.read(n) or b"{}")
         except json.JSONDecodeError:
             return self._json({"ok": False, "error": "bad json"}, 400)
+        if not isinstance(body, dict):
+            return self._json({"ok": False, "error": "JSON object required"}, 400)
         try:
             if self.path == "/api/params":
                 self.ctrl.set_params(body)
@@ -416,7 +498,7 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"ok": False, "error": "unknown action"}, 400)
         except (BackendError, ValueError) as e:
             self.ctrl.message = f"ERROR: {e}"
-            self._json({"ok": False, "error": str(e), "state": self.ctrl.state()})
+            self._json({"ok": False, "error": str(e), "state": self.ctrl.state()}, 400)
 
 
 def serve(cfg: dict, host: str = "0.0.0.0", port: int = 8080,
@@ -662,7 +744,7 @@ function render(st){
     $('perBasis').textContent=s.expected?`% of ${s.expected} expected`:'% of CRC total';
   }else{$('per').textContent='——';perBox.className='ro per';
         $('perBasis').textContent='%';}
-  $('crc').textContent=s?`${s.ok} / ${s.err}`:'——';
+  $('crc').textContent=s?`${s.ok} / ${s.err==null?'n/a':s.err}`:'——';
   $('pkts').textContent=s?s.total:'——';
   const h=st.history;
   if(h.length>=2){
@@ -702,7 +784,8 @@ function chart(h){
 
 async function send(path,body){
   if(busy)return; busy=true;
-  try{const r=await api(path,body); if(r.state)render(r.state);}
+  try{const r=await api(path,body); if(r.state)render(r.state);
+      if(!r.ok&&r.error){$('msg').textContent='ERROR: '+r.error;$('msg').classList.add('err');}}
   finally{busy=false;}
 }
 

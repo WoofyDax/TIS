@@ -4,13 +4,19 @@ from __future__ import annotations
 
 import re
 import subprocess
+import time
 from pathlib import Path
 
 
-def _write_selector(path: str | None, value: str, report: dict) -> None:
+def _write_selector(path: str | None, value: str, report: dict,
+                    required: bool = False) -> None:
     if not path:
         return
     p = Path(path)
+    if not p.exists():
+        message = f"Mode selector is unavailable: {p}"
+        (report["errors"] if required else report["actions"]).append(message)
+        return
     try:
         p.write_text(value + "\n")
         report["actions"].append(f"{p} <- {value}")
@@ -68,8 +74,10 @@ def restore_normal(cfg: dict, reboot: bool = False) -> dict:
     except Exception as e:
         report["actions"].append(f"BT test-end unavailable: {e}")
 
-    _write_selector(w.get("module_testmode"), "0", report)
-    _write_selector(w.get("mode_selector"), "0", report)
+    # The module parameter is not present in every built-in-driver image;
+    # cpmode is the authoritative selector on PAMIR.
+    _write_selector(w.get("module_testmode"), "0", report, required=False)
+    _write_selector(w.get("mode_selector"), "0", report, required=True)
 
     for command in w.get("restore_commands") or []:
         try:
@@ -88,10 +96,14 @@ def restore_normal(cfg: dict, reboot: bool = False) -> dict:
         except OSError as e:
             report["errors"].append(f"Could not verify mode selector: {e}")
 
-    report["verification"]["wlan_exists"] = Path(
-        f"/sys/class/net/{w['interface']}"
-    ).exists()
-    report["verification"]["hci_exists"] = Path("/sys/class/bluetooth/hci0").exists()
+    wlan_path = Path(f"/sys/class/net/{w['interface']}")
+    hci_path = Path("/sys/class/bluetooth/hci0")
+    # systemctl may return just before sysfs has published the interfaces.
+    deadline = time.monotonic() + 5.0
+    while time.monotonic() < deadline and not (wlan_path.exists() and hci_path.exists()):
+        time.sleep(0.1)
+    report["verification"]["wlan_exists"] = wlan_path.exists()
+    report["verification"]["hci_exists"] = hci_path.exists()
     if not report["verification"]["wlan_exists"]:
         report["errors"].append(f"Wi-Fi interface {w['interface']} is missing")
     if not report["verification"]["hci_exists"]:

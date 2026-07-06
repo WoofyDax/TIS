@@ -27,13 +27,23 @@ from .report import finish_run, record_run_sample, start_run, write_sweep_report
 from .session import CsvLogger, fmt_stats, run_rx_session, run_tx_session, sweep
 
 
+def _install_signal_handlers(handler) -> None:
+    """Route terminal/SSH termination through normal backend cleanup."""
+    seen = set()
+    for name in ("SIGINT", "SIGTERM", "SIGHUP"):
+        sig = getattr(signal, name, None)
+        if sig is not None and sig not in seen:
+            signal.signal(sig, handler)
+            seen.add(sig)
+
+
 def _add_common(sp: argparse.ArgumentParser) -> None:
     sp.add_argument("--radio", choices=["wifi", "bt"], default="wifi")
     sp.add_argument("--band", choices=list(rates.BANDS), default="2.4GHz")
     sp.add_argument("--channel", type=int, default=1,
                     help="Wi-Fi channel, or BLE RF channel 0-39")
-    sp.add_argument("--bw", type=int, choices=rates.BANDWIDTHS_MHZ, default=20)
-    sp.add_argument("--rate", default="HE-MCS0",
+    sp.add_argument("--bw", type=int, choices=rates.BANDWIDTHS_MHZ, default=None)
+    sp.add_argument("--rate", default=None,
                     help="Wi-Fi rate name (HT-MCS7, 11b-1M, OFDM-6M, HE-MCS11) "
                          "or BT PHY (1M, 2M, coded-s8, coded-s2)")
     sp.add_argument("--power", type=int, default=15,
@@ -48,8 +58,12 @@ def _add_common(sp: argparse.ArgumentParser) -> None:
 
 
 def _params(a) -> TestParams:
-    return TestParams(radio=a.radio, band=a.band, channel=a.channel,
-                      bandwidth_mhz=a.bw, rate=a.rate, tx_power_dbm=a.power,
+    is_bt = a.radio == "bt"
+    return TestParams(radio=a.radio, band="2.4GHz" if is_bt else a.band,
+                      channel=a.channel,
+                      bandwidth_mhz=a.bw if a.bw is not None else (1 if is_bt else 20),
+                      rate=a.rate or ("1M" if is_bt else "HE-MCS0"),
+                      tx_power_dbm=a.power,
                       payload=a.payload, payload_len=a.payload_len,
                       expected_packets=a.expected or None)
 
@@ -94,8 +108,8 @@ def main(argv: list[str] | None = None) -> int:
     sp = sub.add_parser("bt-scan", help="Scan BLE channels/PHYs to find live test traffic")
     sp.add_argument("--channels", default="0-39",
                     help="Range/list, e.g. 0-39 or 19,20,21")
-    sp.add_argument("--rates", default="1M,2M,coded-s8,coded-s2",
-                    help="Comma list of BT PHYs")
+    sp.add_argument("--rates", default=None,
+                    help="Comma list of BT PHYs (default: validated PHYs)")
     sp.add_argument("--dwell", type=float, default=1.5,
                     help="Seconds per point")
     sp.add_argument("--expected", type=int, default=0,
@@ -121,6 +135,11 @@ def main(argv: list[str] | None = None) -> int:
 
     a = ap.parse_args(argv)
     cfg = load_config(a.config)
+
+    if a.cmd in ("interactive", "web", "bt-scan"):
+        def interrupt_cleanup(*_):
+            raise KeyboardInterrupt
+        _install_signal_handlers(interrupt_cleanup)
 
     if a.cmd == "diagnose":
         w = cfg["wifi"]
@@ -195,7 +214,11 @@ def main(argv: list[str] | None = None) -> int:
             return [int(x) for x in spec.split(",") if x.strip()]
 
         channels = parse_channels(a.channels)
-        rate_list = [x.strip() for x in a.rates.split(",") if x.strip()]
+        default_phys = (cfg["bt"].get("validated_phys", ["1M"])
+                        if cfg["bt"].get("backend") == "aic_uart"
+                        else list(rates.BT_PHYS))
+        rate_list = ([x.strip() for x in a.rates.split(",") if x.strip()]
+                     if a.rates else list(default_phys))
         base = TestParams(
             radio="bt", band="2.4GHz", channel=channels[0], bandwidth_mhz=1,
             rate=rate_list[0], expected_packets=a.expected or None
@@ -271,7 +294,7 @@ def main(argv: list[str] | None = None) -> int:
               "and repeat with --confirm-antenna.", file=sys.stderr)
         return 2
     stop = {"flag": False}
-    signal.signal(signal.SIGINT, lambda *_: stop.__setitem__("flag", True))
+    _install_signal_handlers(lambda *_: stop.__setitem__("flag", True))
     should_stop = lambda: stop["flag"]
 
     backend = make_backend(a.radio, cfg, force_mock=a.mock)

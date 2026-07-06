@@ -65,24 +65,28 @@ offline transfer. The script unpacks the archive into `~/tis-tester`.
 ## Device-side commands
 
 ```bash
-./result/bin/tis-test diagnose
-./result/bin/tis-test interactive
-./result/bin/tis-test web --port 8080
+nix develop
+tis-test diagnose
+tis-test interactive
+tis-test web --port 8080
 
-./result/bin/tis-test rx --radio wifi --band 5GHz --channel 36 --bw 20 \
+tis-test rx --radio wifi --band 5GHz --channel 36 --bw 20 \
   --rate HE-MCS0 --duration 30 --expected 1000
 
-./result/bin/tis-test rx --radio bt --channel 19 --rate 1M --expected 1500
+tis-test rx --radio bt --channel 19 --rate 1M --expected 1500
 
-./result/bin/tis-test tx --radio wifi --band 2.4GHz --channel 6 --rate 11b-11M \
+tis-test tx --radio wifi --band 2.4GHz --channel 6 --rate 11b-11M \
   --power 17 --duration 10 --confirm-antenna
 
-./result/bin/tis-test sweep --radio wifi --band 2.4GHz --channels 1,6,11 \
+tis-test sweep --radio wifi --band 2.4GHz --channels 1,6,11 \
   --rates HE-MCS0,HT-MCS0,11b-1M --dwell 10
 
-./result/bin/tis-test restore
-./result/bin/tis-test restore --reboot
+tis-test restore
+tis-test restore --reboot
 ```
+
+For a standalone immutable package instead of the development shell, run
+`nix build` once and use `./result/bin/tis-test`.
 
 Results default to `~/.local/share/tis-tester/`; configuration defaults to
 `~/.config/tis-tester/tis_config.yaml`. The immutable root is not modified.
@@ -132,7 +136,7 @@ selectors. `--reboot` provides the guaranteed normal-firmware reload.
 | Legacy | 11b 1/2/5.5/11; OFDM 6–54 Mbps |
 | MCS | HT 0–7, VHT 0–9, HE 0–11 |
 | TX power control | 0–23 dBm requested |
-| BLE PHY | 1M, 2M, Coded S=8, Coded S=2 |
+| BLE PHY | AIC UART: validated 1M; HCI backend: 1M, 2M, Coded S=8/S=2 |
 | BLE RF channels | 0–39 |
 
 ## Repository layout

@@ -161,6 +161,7 @@ class BtHciBackend(RadioBackend):
             self.mode = None
             total = self._accum_ok + n
             return RxStats(packets_ok=total,
+                           packets_err=None,
                            rssi_dbm=self._vendor_rssi(),
                            expected_packets=self.params.expected_packets
                            if self.params else None)
@@ -197,5 +198,6 @@ class BtHciBackend(RadioBackend):
         self._accum_ok += n
         self._start_rx_raw(self.params)
         return RxStats(packets_ok=self._accum_ok,
+                       packets_err=None,
                        rssi_dbm=self._vendor_rssi(),
                        expected_packets=self.params.expected_packets)

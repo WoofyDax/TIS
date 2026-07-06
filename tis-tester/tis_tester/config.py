@@ -79,6 +79,9 @@ DEFAULTS: dict = {
         "uart_dev": "/dev/ttyS4",
         "uart_baud": 1500000,
         "startup_delay_s": 0.5,
+        # Expose only PHYs proven on this vendor UART path. Add values only
+        # after validating them on the target firmware.
+        "validated_phys": ["1M"],
         "service_stop": [
             "aic8800-bt.service",
             "bluetooth.service",

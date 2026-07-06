@@ -107,8 +107,15 @@ class WifiAicBackend(RadioBackend):
 
     # --------------------------------------------------------------- control
     def _validate(self, p: TestParams) -> None:
-        rates.channel_to_freq(p.band, p.channel)          # raises if invalid
-        rate = rates.lookup_wifi_rate(p.rate)
+        try:
+            rates.channel_to_freq(p.band, p.channel)
+            rate = rates.lookup_wifi_rate(p.rate)
+        except ValueError as e:
+            raise BackendError(str(e)) from e
+        if p.bandwidth_mhz not in self.bw_codes:
+            raise BackendError(
+                f"Bandwidth must be one of {sorted(self.bw_codes)} MHz"
+            )
         if p.band not in rate.bands:
             raise BackendError(f"{rate.name} is not valid on {p.band}")
         if rate.family == "legacy-b" and p.bandwidth_mhz != 20:

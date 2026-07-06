@@ -22,20 +22,23 @@ class RxStats:
     normal TIS procedure) or, if unknown, as err/(ok+err).
     """
     packets_ok: int = 0
-    packets_err: int = 0
+    # None means the radio API does not expose a bad-CRC counter.  BLE DTM
+    # reports received packets only; representing that as zero would invent
+    # a measurement and produce a misleading CRC/PER display.
+    packets_err: int | None = 0
     rssi_dbm: float | None = None
     expected_packets: int | None = None
     timestamp: float = field(default_factory=time.time)
 
     @property
     def packets_total(self) -> int:
-        return self.packets_ok + self.packets_err
+        return self.packets_ok + (self.packets_err or 0)
 
     @property
     def per(self) -> float | None:
         if self.expected_packets and self.expected_packets > 0:
             return max(0.0, 1.0 - self.packets_ok / self.expected_packets)
-        if self.packets_total > 0:
+        if self.packets_err is not None and self.packets_total > 0:
             return self.packets_err / self.packets_total
         return None
 

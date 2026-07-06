@@ -15,8 +15,9 @@ def fmt_stats(st: RxStats) -> str:
     per = st.per
     rssi = f"{st.rssi_dbm:>6.1f} dBm" if st.rssi_dbm is not None else "   n/a"
     per_s = f"{per * 100:6.2f} %" if per is not None else "   n/a"
+    err = f"{st.packets_err:>6}" if st.packets_err is not None else "   n/a"
     return (f"RSSI {rssi} | PER {per_s} | "
-            f"CRC ok {st.packets_ok:>8} err {st.packets_err:>6} | "
+            f"CRC ok {st.packets_ok:>8} err {err} | "
             f"packets {st.packets_total:>8}")
 
 
@@ -42,7 +43,8 @@ class CsvLogger:
             "tx_power_dbm": p.tx_power_dbm,
             "rssi_dbm": st.rssi_dbm,
             "per": round(st.per, 6) if st.per is not None else "",
-            "packets_ok": st.packets_ok, "packets_err": st.packets_err,
+            "packets_ok": st.packets_ok,
+            "packets_err": "" if st.packets_err is None else st.packets_err,
             "packets_total": st.packets_total,
             "expected_packets": st.expected_packets or "",
             "event": event,
@@ -64,7 +66,11 @@ def run_rx_session(backend: RadioBackend, p: TestParams,
     t_end = time.time() + duration_s if duration_s else None
     try:
         while True:
-            time.sleep(poll_interval_s)
+            delay = poll_interval_s
+            if t_end is not None:
+                delay = min(delay, max(0.0, t_end - time.time()))
+            if delay > 0:
+                time.sleep(delay)
             st = backend.poll_rx()
             if logger:
                 logger.log(p, st)
