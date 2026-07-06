@@ -75,5 +75,8 @@ bt:
   vendor_rssi_regex: 'rssi\s*[:=]\s*(-?\d+)'
 
 serial:
-  port: COM5
+  # auto detects one USB serial device on Windows, macOS, or Linux.
+  # Set an explicit value if more than one is attached, e.g. COM5 on Windows
+  # or /dev/cu.usbserial-0001 on macOS.
+  port: auto
   baud: 1500000

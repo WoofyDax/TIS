@@ -13,7 +13,7 @@
       packages = forAllSystems (pkgs: rec {
         tis-tester = pkgs.python3Packages.buildPythonApplication {
           pname = "tis-tester";
-          version = "1.2.1";
+          version = "1.3.0";
           src = ./.;
           format = "pyproject";
           nativeBuildInputs = [ pkgs.python3Packages.setuptools ];

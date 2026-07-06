@@ -1,8 +1,10 @@
+.DS_Store
+.venv-macos/
+.pytest_cache/
 __pycache__/
 *.py[cod]
-.pytest_cache/
+*.egg-info/
 build/
 dist/
-*.egg-info/
 .nix-*
 result

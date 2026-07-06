@@ -102,7 +102,7 @@ DEFAULTS: dict = {
         "vendor_rssi_regex": r"rssi\s*[:=]\s*(-?\d+)",
     },
     "serial": {
-        "port": "COM5",
+        "port": "auto",
         "baud": 1500000,
     },
 }

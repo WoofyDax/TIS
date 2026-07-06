@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import time
 from pathlib import Path
 
@@ -19,6 +20,7 @@ from tis_tester.cli import main
 from tis_tester.report import finish_run, record_run_sample, start_run
 from tis_tester.report import write_sweep_report
 from tis_tester.recovery import _write_selector
+from tis_tester import serial_console
 from tis_tester.webui import Controller
 
 
@@ -330,3 +332,104 @@ def test_cli_real_tx_fails_before_backend_without_antenna_confirmation(capsys):
     rc = main(["tx", "--duration", "1"])
     assert rc == 2
     assert "interlocked" in capsys.readouterr().err
+
+
+class FakePort:
+    def __init__(self, device, description="USB serial", manufacturer=None,
+                 vid=None, hwid=""):
+        self.device = device
+        self.description = description
+        self.manufacturer = manufacturer
+        self.vid = vid
+        self.hwid = hwid
+
+
+def test_macos_serial_auto_detection_uses_callout_device(monkeypatch):
+    monkeypatch.setattr(serial_console.sys, "platform", "darwin")
+    records = [
+        FakePort("/dev/tty.usbserial-0001"),
+        FakePort("/dev/cu.Bluetooth-Incoming-Port", "Bluetooth-Incoming-Port"),
+        FakePort("/dev/cu.usbserial-0001"),
+    ]
+    assert serial_console.resolve_port("auto", records) == "/dev/cu.usbserial-0001"
+
+
+def test_serial_auto_detection_refuses_ambiguous_macos_ports(monkeypatch):
+    monkeypatch.setattr(serial_console.sys, "platform", "darwin")
+    records = [
+        FakePort("/dev/cu.usbserial-A"),
+        FakePort("/dev/cu.usbmodem-B"),
+    ]
+    with pytest.raises(BackendError, match="More than one"):
+        serial_console.resolve_port("auto", records)
+
+
+def test_windows_serial_auto_detection_prefers_usb_over_builtin_com(monkeypatch):
+    monkeypatch.setattr(serial_console.sys, "platform", "win32")
+    records = [
+        FakePort("COM1", "Communications Port"),
+        FakePort("COM5", "USB Serial Port", vid=0x1234),
+    ]
+    assert serial_console.resolve_port("auto", records) == "COM5"
+
+
+def test_serial_cli_uses_configured_port_and_baud(tmp_path, monkeypatch, capsys):
+    settings = tmp_path / "config.yaml"
+    settings.write_text(
+        "serial:\n  port: /dev/cu.usbserial-PAMIR\n  baud: 1500000\n",
+        encoding="utf-8",
+    )
+    seen = []
+    monkeypatch.setattr(
+        serial_console, "status",
+        lambda port, baud: seen.append((port, baud)) or "device ok",
+    )
+    assert main(["--config", str(settings), "serial", "status"]) == 0
+    assert seen == [("/dev/cu.usbserial-PAMIR", 1_500_000)]
+    assert "device ok" in capsys.readouterr().out
+
+
+def test_serial_archive_transfer_verifies_and_unpacks(tmp_path, monkeypatch):
+    archive = tmp_path / "tis-tester.tar.gz"
+    archive.write_bytes(b"safe offline archive")
+    commands = []
+
+    class FakeWire:
+        is_open = True
+
+        def write(self, data):
+            commands.append(("wire", data))
+
+        def flush(self):
+            pass
+
+    class FakeConsole:
+        def __init__(self, port, baud, timeout=10):
+            self.serial = FakeWire()
+
+        def open(self):
+            pass
+
+        def interrupt(self):
+            pass
+
+        def command(self, command, timeout=None):
+            commands.append(("command", command))
+            return "ok", 0
+
+        def close(self):
+            self.serial.is_open = False
+
+    monkeypatch.setattr(serial_console, "SerialConsole", FakeConsole)
+    progress = []
+    result = serial_console.send_archive(
+        "ignored", 1_500_000, archive,
+        progress=lambda done, total: progress.append((done, total)),
+    )
+    sent = "\n".join(value for kind, value in commands if kind == "command")
+    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    assert digest in sent
+    assert "sha256sum" in sent
+    assert "tar xzf" in sent
+    assert progress[-1][0] == progress[-1][1]
+    assert "Installed" in result

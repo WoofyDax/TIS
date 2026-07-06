@@ -1,7 +1,8 @@
 # Device and web-dashboard setup
 
-See [README.md](README.md) for the verified hardware limitations and
-[SERIAL_SETUP.md](SERIAL_SETUP.md) for COM5 operation.
+See [README.md](README.md) for the verified hardware limitations,
+[SERIAL_SETUP.md](SERIAL_SETUP.md) for serial operation, and
+[MACOS_SETUP.md](MACOS_SETUP.md) for the Mac laptop installer and launcher.
 
 ## Install on PAMIR
 

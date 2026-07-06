@@ -2,7 +2,7 @@
 
 Automated Wi‑Fi and Bluetooth receiver testing for the FCS960K-N module on
 the PAMIR Debian/Nix image. It provides a terminal UI, browser dashboard,
-automation CLI, CSV logging, and a Windows serial-console launcher.
+automation CLI, CSV logging, and Windows/macOS serial-console launchers.
 
 ## Implemented controls
 
@@ -35,13 +35,27 @@ The TUI uses `t` for TX, `r` for RX, and `z` to zero counters. TX remains
 disabled until the operator confirms that an antenna or chamber RF cable is
 connected. The web UI applies the same interlock.
 
-## COM5 serial use from Windows
+## Laptop serial use
+
+Laptop control supports Windows, macOS, and Linux. The tested Windows port is
+**COM5**; macOS normally exposes the same USB adapter as
+`/dev/cu.usbserial-*` or `/dev/cu.usbmodem*`. The console is **1,500,000 baud,
+8-N-1, no flow control** on every host. Find the local name without opening
+the port:
+
+```text
+tis-test serial ports
+```
+
+Install laptop-side support with `python -m pip install -e ".[serial]"`.
+For a double-click Mac installer and launcher, see
+[MACOS_SETUP.md](MACOS_SETUP.md).
+
+### Windows / COM5
 
 The tested console is **COM5 at 1,500,000 baud, 8-N-1, no flow control**.
 PuTTY's old saved 115200 setting is incorrect for this board. Only one
 program can own COM5, so close PuTTY before a serial command.
-
-Install laptop-side serial support:
 
 ```powershell
 py -m pip install -e ".[serial]"
@@ -61,6 +75,21 @@ tis-test serial restore --port COM5 --baud 1500000 --reboot
 
 Use `laptop-tools/send-to-pamir.ps1 -Port COM5 -Baud 1500000` for the first
 offline transfer. The script unpacks the archive into `~/tis-tester`.
+
+### macOS
+
+```bash
+cd /path/to/TIS/tis-tester
+./laptop-tools/install-macos.command
+./.venv-macos/bin/tis-test serial ports
+./.venv-macos/bin/tis-test serial dashboard \
+  --port /dev/cu.usbserial-0001 --baud 1500000
+```
+
+The Mac dashboard hands the port to pyserial miniterm. Exit miniterm with
+Control-]. Auto-detection may omit `--port` when exactly one USB serial
+adapter is connected. The cross-platform `serial send --file FILE.tar.gz`
+command provides a SHA-256-verified first upload.
 
 ## Device-side commands
 
@@ -146,7 +175,7 @@ tis_tester/
   cli.py             CLI and serial entry points
   tui.py             curses bench UI
   webui.py           offline browser dashboard
-  serial_console.py  COM5 laptop launcher/recovery
+  serial_console.py  Windows/macOS/Linux laptop launcher, upload, recovery
   aic_ioctl.py       allow-listed AIC8800 private ioctl
   recovery.py        stop and normal-mode restoration
   session.py         dwell, sweep, PER math, CSV logging

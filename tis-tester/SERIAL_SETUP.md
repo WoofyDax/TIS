@@ -1,8 +1,9 @@
-# PAMIR serial setup
+# PAMIR serial setup (Windows and macOS)
 
-The tested console is **COM5, 1,500,000 baud, 8 data bits, no parity, one
-stop bit, no flow control**. PuTTY and the transfer/controller scripts cannot
-hold COM5 at the same time.
+The tested console is **1,500,000 baud, 8 data bits, no parity, one stop bit,
+no flow control**. It appears as `COM5` on the tested Windows laptop and as a
+`/dev/cu.*` port on macOS. Only one serial program can hold the port at once.
+See [MACOS_SETUP.md](MACOS_SETUP.md) for the complete Mac walkthrough.
 
 ## 1. Verify the console
 
@@ -20,6 +21,15 @@ Set-ExecutionPolicy -Scope Process Bypass -Force
 ```
 
 The script verifies SHA-256 before unpacking to `~/tis-tester`.
+
+On macOS, create the archive and use the cross-platform uploader:
+
+```bash
+tar --exclude='.venv-macos' --exclude='*.tar.gz' \
+    -czf ../tis-tester.tar.gz .
+./.venv-macos/bin/tis-test serial send --port /dev/cu.usbserial-0001 \
+    --baud 1500000 --file ../tis-tester.tar.gz
+```
 
 ## 3. Simulator check on PAMIR
 
@@ -47,6 +57,18 @@ tis-test serial dashboard --port COM5 --baud 1500000
 interlock before TX, automatically stops TX at the configured safety limit,
 and writes an HTML report path after each completed run.
 
+On macOS, install and launch with:
+
+```bash
+./laptop-tools/install-macos.command
+./.venv-macos/bin/tis-test serial ports
+./.venv-macos/bin/tis-test serial dashboard \
+    --port /dev/cu.usbserial-0001 --baud 1500000
+```
+
+The Mac launcher uses pyserial miniterm; press Control-] to leave it. If only
+one USB serial adapter exists, `--port` can be omitted.
+
 ## 5. Normal-mode recovery
 
 From PAMIR:
@@ -56,11 +78,13 @@ tis-test restore
 tis-test restore --reboot   # guaranteed normal-firmware reload
 ```
 
-Or, after closing PuTTY, from Windows:
+Or, after closing PuTTY/miniterm, from the laptop:
 
 ```powershell
 tis-test serial restore --port COM5 --baud 1500000 --reboot
 ```
+
+Replace `COM5` with the `/dev/cu.*` port on macOS.
 
 The restore flow attempts both Wi‑Fi and BLE test-stop commands, selects
 `cpmode=0`, unblocks the radios, restarts networking/Bluetooth services, and

@@ -125,13 +125,20 @@ def main(argv: list[str] | None = None) -> int:
     sp.add_argument("--reboot", action="store_true",
                     help="Reboot after selecting mode 0 (guaranteed firmware reload)")
 
-    sp = sub.add_parser("serial", help="Laptop-side COM-port control")
-    sp.add_argument("action", choices=["status", "launch", "dashboard", "restore"])
-    sp.add_argument("--port", default="COM5")
-    sp.add_argument("--baud", type=int, default=1500000)
+    sp = sub.add_parser("serial", help="Laptop-side USB serial control (Windows/macOS/Linux)")
+    sp.add_argument("action", choices=[
+        "ports", "status", "send", "launch", "dashboard", "restore",
+    ])
+    sp.add_argument("--port", default=None,
+                    help="Serial port (default: config/auto-detect; e.g. COM5 or /dev/cu.usbserial-*)")
+    sp.add_argument("--baud", type=int, default=None,
+                    help="Baud rate (default: config, normally 1500000)")
+    sp.add_argument("--file", help="Source .tar.gz for the 'send' action")
     sp.add_argument("--mock", action="store_true")
     sp.add_argument("--reboot", action="store_true")
-    sp.add_argument("--no-putty", action="store_true")
+    sp.add_argument("--no-terminal", "--no-putty", dest="no_terminal",
+                    action="store_true",
+                    help="Start the dashboard without opening a serial terminal")
 
     a = ap.parse_args(argv)
     cfg = load_config(a.config)
@@ -168,13 +175,38 @@ def main(argv: list[str] | None = None) -> int:
     if a.cmd == "serial":
         from . import serial_console
         try:
-            if a.action == "status":
-                print(serial_console.status(a.port, a.baud))
+            serial_cfg = cfg.get("serial", {})
+            configured_port = serial_cfg.get("port", "auto")
+            selected_port = a.port or configured_port or "auto"
+            selected_baud = a.baud or int(serial_cfg.get("baud", 1_500_000))
+            if a.action == "ports":
+                print(serial_console.format_ports())
+            elif a.action == "status":
+                print(serial_console.status(selected_port, selected_baud))
+            elif a.action == "send":
+                if not a.file:
+                    raise BackendError("serial send requires --file PATH.tar.gz")
+                last_percent = {"value": -1}
+
+                def show_progress(done: int, total: int) -> None:
+                    percent = int(done * 100 / total) if total else 100
+                    if percent >= last_percent["value"] + 5 or done == total:
+                        print(f"\rSerial transfer: {percent:3d}%", end="", flush=True)
+                        last_percent["value"] = percent
+
+                result = serial_console.send_archive(
+                    selected_port, selected_baud, a.file, progress=show_progress,
+                )
+                if last_percent["value"] >= 0:
+                    print()
+                print(result)
             elif a.action == "restore":
-                print(serial_console.restore(a.port, a.baud, reboot=a.reboot))
+                print(serial_console.restore(
+                    selected_port, selected_baud, reboot=a.reboot,
+                ))
             else:
-                serial_console.launch(a.port, a.baud, mock=a.mock,
-                                      open_putty=not a.no_putty)
+                serial_console.launch(selected_port, selected_baud, mock=a.mock,
+                                      open_terminal=not a.no_terminal)
         except BackendError as e:
             print(f"error: {e}", file=sys.stderr)
             return 2
